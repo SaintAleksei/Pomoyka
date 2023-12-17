@@ -10,6 +10,7 @@ check_result()
     echo -e " \e[32m[OK]\e[0m"
   else
     echo -e " \e[31m[ERROR]\e[0m (see $log_file)"
+    exit 1
   fi
 }
 
@@ -19,7 +20,7 @@ check_result
 
 echo -n "Installing vim-plug...       "
 curl -fLo ~/.vim/autoload/plug.vim --create-dirs \
-    https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim 1>/dev/null 2>$log_file
+     https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim 1>/dev/null 2>$log_file
 check_result
 
 echo -n "Installing .vimrc file...    "
