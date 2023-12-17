@@ -14,12 +14,13 @@ set shiftwidth=2
 set expandtab
 
 " Fully disable autoformatting (I really hate it)
+filetype indent off
+filetype plugin off
 set noautoindent
 set nosmartindent
 set nocindent
 set indentexpr=
 set formatoptions=
-filetype indent off
 
 " Pretty visual effects
 set number
