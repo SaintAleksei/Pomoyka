@@ -24,5 +24,5 @@ curl -fLo ~/.vim/autoload/plug.vim --create-dirs \
 check_result
 
 echo -n "Installing .vimrc file...    "
-cp .vimrc ~/.vimrc
+cp .vimrc ~/.vimrc 1>/dev/null 2>$log_file
 check_result
