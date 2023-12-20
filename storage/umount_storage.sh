@@ -4,7 +4,7 @@
 
 source "../script/source.sh"
 
-msg_size="${MSG_SIZE:-80}"
+msg_size="${MSG_SIZE:-100}"
 echo "Using msg_size    \"$msg_size\""
 log="${LOG:-.umount_storage.sh_log.txt}"
 echo "Using log         \"$log\""
