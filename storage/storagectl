@@ -1,0 +1,232 @@
+#!/bin/bash
+
+source "../script/source.sh"
+
+# Define default parameters
+      login_def="${STORAGE_LOGIN:-"$(whoami)"}"
+       host_def="${STORAGE_HOST:-"localhost"}"
+ local_path_def="${STORAGE_LOCAL:-"/home/$login_def/storage"}"
+remote_path_def="${STORAGE_REMOTE:-"/home/$login_def/storage"}"
+
+script_name="$0"
+
+# Cleanup function to avoid partial result of execution
+cleanup()
+{
+  fusermount -u "$local_decrypted" &>/dev/null
+  fusermount -u "$local_encrypted" &>/dev/null
+  rmdir "$local_decrypted" &>/dev/null
+  rmdir "$local_encrypted" &>/dev/null
+  rmdir "$local_path"      &>/dev/null
+}
+
+main_help()
+{
+  echo "Client storage control script (c) s41nt0l3xus"
+  echo "USAGE:"
+  echo "  $script_name ACTION [OPTION, [OPTION ...]]"
+  echo "ACTION:"
+  echo "  h, help           - Print this help message"
+  echo "  m, mount          - Mount storage"
+  echo "  u, umount         - Unmount storage" 
+  echo "OPTION:"
+  echo "  $script_name ACTION --help|-h"
+}
+
+mount_help()
+{
+  echo "Use it to mount remote enrypted storage"
+  echo "USAGE:"
+  echo "  $script_name m[ount] [OPTION, [OPTION ...]]"
+  echo "OPTION:"
+  echo "  --help, -h        - Print this help message                |"
+  echo "  --host <host>     - Specify remote host with the storage   | Default: $host_def"
+  echo "  --login <login>   - Specify login on the remote host       | Default: $login_def"
+  echo "  --remote <path>   - Path to the storage on the remote host | Default: $remote_path_def"
+  echo "  --local <path>    - Path to the storage on the local host  | Default: $local_path_def"
+  echo "REQUIREMENTS"
+  echo "  sshfs             - Mount remote storage via SSH"
+  echo "  gocryptfs         - Encrypt decrypted storage"  
+  echo "  mkdir             - Create directories"
+}
+
+umount_help()
+{
+  echo "Use it to unmount remote enrypted storage"
+  echo "USAGE:"
+  echo "  $script_name u[mount] [OPTION, [OPTION ...]]"
+  echo "OPTION:"
+  echo "  --help, -h        - Print this help message                |"
+  echo "  --local <path>    - Path to the storage on the local host  | Default: $local_path_def"
+  echo "REQUIREMENTS:"
+  echo "  rmdir             - Remove empty directories"
+  echo "  fusermount        - Unmount storages"
+}
+
+mount()
+{
+  local       login="$login_def"
+  local        host="$host_def"
+  local remote_path="$remote_path_def"
+  local  local_path="$local_path_def"
+  
+  # Try to override default parameters by passed by command line ones
+  while [ $# -gt 0 ]
+  do
+    key="$1"
+    case $key in
+      --help|-h)
+        mount_help $0
+        exit 0
+        ;;
+      --host)
+        host="${2:-"$host_def"}"
+        shift
+        shift
+        ;;
+      --login)
+        login="${2:-"$login_def"}"
+        shift
+        shift
+        ;;
+      --remote)
+        remote_path="${2:-"$remote_path_def"}"
+        shift
+        shift
+        ;;
+      --local)
+        local_path="${2:-"$local_path_def"}"
+        shift
+        shift
+        ;;
+      *)
+        echo "Unknow option \"$key\""
+        echo "Try to run with --help/-h"
+        exit 1
+        ;;
+    esac
+  done
+
+  # Check requirements
+  check_executable "sshfs"
+  check_executable "gocryptfs"
+
+  # Verbose output
+  echo_inf "Using login       \"$login\""
+  echo_inf "Using host        \"$host\""
+  echo_inf "Using local path  \"$local_path\""
+  echo_inf "Using remote path \"$remote_path\""
+
+  local local_encrypted="${local_path%/}/encrypted"
+  local local_decrypted="${local_path%/}/decrypted"
+
+  # Main script logic
+
+  # Do cleanup to clean previous errors
+  cleanup
+
+  # Create directory for encrypted storage
+  execute_with_check 'mkdir -p $local_encrypted'           \
+                     "Failed to create directory"          \
+                     "cleanup" || exit 1
+
+  # Mount encrypted storage from remote host using $login@$host:$remote_path
+  execute_with_check 'sshfs -o PasswordAuthentication=no $login@$host:$remote_path $local_encrypted' \
+                     "Failed to mount remote"                                                        \
+                     "cleanup" || exit 1
+
+  # Create directory for decrypted storage
+  execute_with_check 'mkdir -p $local_decrypted'           \
+                     "Failed to create directory"          \
+                     "cleanup" || exit 1
+
+  # Read password for decryption
+  # FIXME: Use something more secure
+  read -s -p "$(echo -n 'Enter password for decryption: ')" passwd && echo
+
+  execute_with_check 'echo "$passwd" | gocryptfs $local_encrypted $local_decrypted'  \
+                     "Failed to decrypt"                                               \
+                     "cleanup" || exit 1
+}
+
+umount()
+{
+  local local_path="$local_path_def"
+
+  # Try to override default parameters by passed by command line ones
+  while [ $# -gt 0 ]
+  do
+    key="$1"
+    case $key in
+      --help|-h)
+        umount_help $0
+        exit 0
+        ;;
+      --local)
+        local_path="${2:-"$local_path_def"}"
+        shift
+        shift
+        ;;
+      *)
+        echo "Unknow option \"$key\""
+        echo "Try to run with --help/-h"
+        exit 1
+        ;;
+    esac
+  done
+
+  check_executable "fusermount"
+  check_executable "rmdir"
+
+  # Verbose output
+  echo_inf "Using local path  \"$local_path\""
+
+  local local_encrypted="${local_path%/}/encrypted"
+  local local_decrypted="${local_path%/}/decrypted"
+
+  execute_with_check 'fusermount -u "$local_decrypted"'                   \
+                     "Failed to unmount"                                  \
+                     "cleanup" || exit 1
+
+  execute_with_check 'fusermount -u "$local_encrypted"'                   \
+                     "Failed to unmount"                                  \
+                     "cleanup" || exit 1
+
+  execute_with_check 'rmdir "$local_decrypted"'                           \
+                     "Failed to remove directory"                         \
+                     "cleanup" || exit 1
+
+  execute_with_check 'rmdir "$local_encrypted"'                           \
+                     "Failed to remove directory"                         \
+                     "cleanup" || exit 1
+
+  execute_with_check 'rmdir "$local_path"'                                \
+                     "Failed to remove directory"                         \
+                     "cleanup" || exit 1
+}
+
+case $1 in
+  h|help)
+    main_help $0
+    exit 0
+    ;;
+  m|mount)
+    shift
+    mount $@
+    ;;
+  u|umount)
+    shift 
+    umount $@
+    ;;
+  *)
+    echo "Bad action \"$1\""
+    echo "Try to run:"
+    echo "  $0 h"
+    echo "or:"
+    echo "  $0 help"
+
+    exit 1
+    ;;
+esac
+
+# vim: set ft=bash

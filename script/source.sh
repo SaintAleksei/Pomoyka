@@ -16,13 +16,13 @@ echo_fixed()
 
 echo_ok()
 {
-  echo -e "[ \e[32m  OK \e[0m ]"
+  echo -e " [ \e[32m  OK \e[0m ]"
 }
 
 # $1 - error message
 echo_error()
 {
-  echo -e "[ \e[31mERROR\e[0m ] ($1)"
+  echo -e " [ \e[31mERROR\e[0m ] ($1)"
 }
 
 # $1 - error message
@@ -41,16 +41,34 @@ echo_result()
   return $error
 }
 
+echo_err()
+{
+  local msg=$1
+
+  echo -e "[\e[31mERR\e[0m] $msg"
+}
+
+echo_inf()
+{
+  local msg=$1
+
+  echo -e "[\e[32mINF\e[0m] $msg"
+}
+
 # $1 Command to execute
+# $2 Message
+# $3 Cleanup callback
 execute_with_check()
 {
-  local output=""
+  local     cmd="$1"
+  local     msg="${2:-"Execution failed"}" 
+  local cleanup="$3"
 
-  echo_fixed       "Executing \"$1\"..."
-  output=$($1 2>&1)
-  if ! echo_result "Execution failed"
+  echo_inf "$1"
+  if ! eval "$1 1>/dev/null"
   then
-    printf "$output"
+    echo_err "$msg"
+    eval "$cleanup" &>/dev/null
     return 1
   fi
 
@@ -61,18 +79,16 @@ check_executable()
 {
   local executable="${1%% *}"
 
-  echo_fixed  "Checking if executable \"$executable\" exists..."
-  which "$executable" &>/dev/null
-  echo_result "Not found" || return 1
+  echo_inf "Check if executable \"$executable\" exists"
+  which "$executable" &>/dev/null || echo_err "Not found" && return 1
 
   return 0
 }
 
 check_root()
 {
-  echo_fixed  "Checking id for root..."
-  [ "$(id -u 2>/dev/null)" = "0" ]
-  echo_result "Not root"  || return 1
+  echo_fixed  "Check if root"
+  [ "$(id -u 2>/dev/null)" = "0" ] || echo_err "Not root" && return 1
 
   return 0
 }
@@ -81,9 +97,8 @@ check_package_installed()
 {
   local package="${1%% *}"
 
-  echo_fixed  "Checking if package \"$package\" installed"
-  dpkg-query --show "$package"
-  echo_result "Not found" || return 1
+  echo_fixed  "Check if package \"$package\" installed"
+  dpkg-query --show "$package" || echo_err "Not found" && return 1
 
   return 0
 }
@@ -148,23 +163,23 @@ install_packages()
   check_executable      "apt-get"           || return 1
   check_executable      "apt-cache"         || return 1
 
-  execute_with_check    "apt-get update"    || return 1
+  execute_with_check    "apt-get update"              \
+                        "Failed to update apt cache" || return 1
 
   for req in $requirements
   do
-      echo_fixed        "Checking if pacakge \"$req\" exists..."
-      apt-cache show "$req" &>/dev/null
-      if ! echo_result  "Not found"
+      echo_inf "Check if pacakge \"$req\" exists"
+      if ! apt-cache show "$req" &>/dev/null
       then
+        echo_err "Failed to find package"
         failcnt=$((failcnt + 1))
         continue
       fi
 
-      echo_fixed        "Trying to install package \"$req\"..."
-      output=$(apt-get install -y "$req")
-      if ! echo_result  "Installation failed"
+      echo_inf "Try to install package \"$req\"..."
+      if ! apt-get install -y "$req" 1>/dev/null
       then
-        printf "$output"
+        echo_err "Failed to install package" 
         failcnt=$((failcnt + 1))
         continue
       fi
@@ -183,17 +198,20 @@ install_packages_by_files()
   install_packages "$uninstalled"
 }
 
-echo "This are some functions usefull for source: "
-echo "   echo_fixed                - echo string with fixed spaces filling"
-echo "   echo_ok                   - echo OK message"
-echo "   echo_error                - echo ERROR message"
-echo "   echo_result               - echo message depending on the last command result"
-echo "   execute_with_check        - execute command with result checking"
-echo "   check_executable          - check if executable exist"
-echo "   check_root                - check if current user is root"
-echo "   check_package_installed   - check if package is installed"
-echo "   get_packages_by_files     - get list of packages from list of files"
-echo "   get_packages_uninstalled  - get list of uninstalled packages"
-echo "   install_packages          - install packages"
-echo "   install_packages_by_files - install packages by files belonging them"
-echo "Look at file you just executed for details"
+doc()
+{
+  echo "This are some functions usefull for source: "
+  echo "   echo_fixed                - echo string with fixed spaces filling"
+  echo "   echo_ok                   - echo OK message"
+  echo "   echo_error                - echo ERROR message"
+  echo "   echo_result               - echo message depending on the last command result"
+  echo "   execute_with_check        - execute command with result checking"
+  echo "   check_executable          - check if executable exist"
+  echo "   check_root                - check if current user is root"
+  echo "   check_package_installed   - check if package is installed"
+  echo "   get_packages_by_files     - get list of packages from list of files"
+  echo "   get_packages_uninstalled  - get list of uninstalled packages"
+  echo "   install_packages          - install packages"
+  echo "   install_packages_by_files - install packages by files belonging them"
+  echo "Look at file you just executed for details"
+}
