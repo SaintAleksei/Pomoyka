@@ -29,8 +29,22 @@ main_help()
   echo "  h, help           - Print this help message"
   echo "  m, mount          - Mount storage"
   echo "  u, umount         - Unmount storage" 
+  echo "  c, check          - Check storage"
   echo "OPTION:"
   echo "  $script_name ACTION --help|-h"
+}
+
+check_help()
+{
+  echo "Use it to check if remote enrypted storage is mounted"
+  echo "USAGE:"
+  echo "  $script_name c[heck] [OPTION, [OPTION ...]]"
+  echo "OPTION:"
+  echo "  --help, -h        - Print this help message                |"
+  echo "  --local <path>    - Path to the storage on the local host  | Default: $local_path_def"
+  echo "REQUIREMENTS:"
+  echo "  df                - List mounted directories"
+  echo "  grep              - Find required directories"
 }
 
 mount_help()
@@ -61,6 +75,57 @@ umount_help()
   echo "REQUIREMENTS:"
   echo "  rmdir             - Remove empty directories"
   echo "  fusermount        - Unmount storages"
+}
+
+check()
+{
+  local local_path="$local_path_def"
+
+  check_executable "df"
+  check_executable "grep"
+
+  # Try to override default parameters by passed by command line ones
+  while [ $# -gt 0 ]
+  do
+    key="$1"
+    case $key in
+      --help|-h)
+        check_help $0
+        exit 0
+        ;;
+      --local)
+        local_path="${2:-"$local_path_def"}"
+        shift
+        shift
+        ;;
+      *)
+        echo "Unknow option \"$key\""
+        echo "Try to run with --help/-h"
+        exit 1
+        ;;
+    esac
+  done
+
+  echo_inf "Using local path $local_path"
+
+  local local_encrypted="${local_path%/}/encrypted"
+  local local_decrypted="${local_path%/}/decrypted"
+
+  local status="\e[32mMOUNTED\e[0m"
+
+  if ! $(df -h | grep "$local_encrypted" &>/dev/null)
+  then
+    echo_inf "Remote storage is not mounted"
+    status="\e[31mUNMOUNTED\e0m"
+  fi
+
+  if ! $(df -h | grep "$local_decrypted" &>/dev/null)
+  then
+    echo_inf "Decrypted storage is not mounted"
+    status="\e[31mUNMOUNTED\e[0m"
+  fi
+
+  echo_inf "Storage $local_path is $status"
 }
 
 mount()
@@ -131,8 +196,8 @@ mount()
                      "cleanup" || exit 1
 
   # Mount encrypted storage from remote host using $login@$host:$remote_path
-  execute_with_check 'sshfs -o PasswordAuthentication=no $login@$host:$remote_path $local_encrypted' \
-                     "Failed to mount remote"                                                        \
+  execute_with_check 'sshfs $login@$host:$remote_path $local_encrypted' \
+                     "Failed to mount remote"                           \
                      "cleanup" || exit 1
 
   # Create directory for decrypted storage
@@ -140,12 +205,8 @@ mount()
                      "Failed to create directory"          \
                      "cleanup" || exit 1
 
-  # Read password for decryption
-  # FIXME: Use something more secure
-  read -s -p "$(echo -n 'Enter password for decryption: ')" passwd && echo
-
-  execute_with_check 'echo "$passwd" | gocryptfs $local_encrypted $local_decrypted'  \
-                     "Failed to decrypt"                                               \
+  execute_with_check 'gocryptfs $local_encrypted $local_decrypted'  \
+                     "Failed to decrypt"                            \
                      "cleanup" || exit 1
 }
 
@@ -217,6 +278,10 @@ case $1 in
   u|umount)
     shift 
     umount $@
+    ;;
+  c|check)
+    shift
+    check $@
     ;;
   *)
     echo "Bad action \"$1\""
